@@ -15,7 +15,7 @@ spam_id = os.environ['spam_id']
 
 with open('pokemon', 'r', encoding='utf8') as file:
     pokemon_list = file.read()
-with open('mythical', 'r') as file:
+with open('mythical', 'r', encoding='utf8') as file:
     mythical_list = file.read()
 
 poketwo = 716390085896962058
@@ -202,27 +202,35 @@ async def move_to_category(channel, solution, base_category_name, guild, max_cha
 
 @client.command()
 async def setup(ctx):
-    """Sets up Friends Col 1–5, Collection 1–5, and Spawns 1–50 categories."""
+    """Sets up Friends Col 1–5, Collection 1–5, and a single Spawns category with 50 channels."""
     guild = ctx.guild
 
+    # Create Friends Col 1-5
     for i in range(1, 6):
         name = f"🎉Friends Col {i}" if i > 1 else "🎉Friends Col"
         if not discord.utils.get(guild.categories, name=name):
             await guild.create_category(name)
             print(f"[setup] Created category {name}")
 
+    # Create Collection 1-5
     for i in range(1, 6):
         name = f"😈Collection {i}" if i > 1 else "😈Collection"
         if not discord.utils.get(guild.categories, name=name):
             await guild.create_category(name)
             print(f"[setup] Created category {name}")
 
+    # Create single Spawns category
+    spawns_category = discord.utils.get(guild.categories, name="Spawns")
+    if spawns_category is None:
+        spawns_category = await guild.create_category("Spawns")
+        print("[setup] Created category Spawns")
+
+    # Create 50 spawn channels inside Spawns
     for i in range(1, 51):
-        name = f"Spawns {i}"
-        if not discord.utils.get(guild.categories, name=name):
-            cat = await guild.create_category(name)
-            await guild.create_text_channel(f"spawn-{i}", category=cat)
-            print(f"[setup] Created category {name} with channel spawn-{i}")
+        channel_name = f"spawn-{i}"
+        if not discord.utils.get(spawns_category.channels, name=channel_name):
+            await guild.create_text_channel(channel_name, category=spawns_category)
+            print(f"[setup] Created channel {channel_name} in Spawns")
 
     await ctx.send("✅ Setup complete!")
 
@@ -250,3 +258,4 @@ async def pause(ctx):
 # --- Start keep-alive + bot ---
 keep_alive()
 client.run(user_token)
+                    
