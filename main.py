@@ -5,8 +5,10 @@ import random
 import unicodedata
 from discord.ext import commands, tasks
 import discord
+from flask import Flask
+from threading import Thread
 
-version = 'v3.1'
+version = 'v3.2'
 
 user_token = os.environ['user_token']
 spam_id = os.environ['spam_id']
@@ -21,6 +23,20 @@ p2assistant = 123456789012345678  # replace with actual p2assistant bot ID
 client = commands.Bot(command_prefix="!")
 
 intervals = [3.6, 2.8, 3.0, 3.2, 3.4]
+
+# --- Flask keep-alive for Render ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "I'm alive"
+
+def run():
+    app.run(host="0.0.0.0", port=8080)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
 
 
 def sanitize_name(name: str) -> str:
@@ -231,5 +247,6 @@ async def pause(ctx):
     await ctx.send("Spam loop paused.")
 
 
+# --- Start keep-alive + bot ---
+keep_alive()
 client.run(user_token)
-    
