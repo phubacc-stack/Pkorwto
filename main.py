@@ -148,8 +148,10 @@ async def setup(ctx):
             await guild.create_category(name)
             created.append(name)
 
-    # reorder categories
+    # 🔹 refresh categories after creating so reorder works
+    await asyncio.sleep(1)
     categories = {c.name: c for c in guild.categories}
+
     for index, name in enumerate(category_names):
         cat = categories.get(name)
         if cat:
