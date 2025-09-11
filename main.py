@@ -10,7 +10,7 @@ user_token = os.environ['user_token']
 spam_id = os.environ['spam_id']
 report_id = os.environ['report_id']
 
-# --- Keep-alive Flask app ---
+# --- Keep-alive Flask app (for Render/Replit) ---
 app = Flask('')
 
 @app.route('/')
@@ -46,19 +46,21 @@ def solve(message, file_name):
     solution = re.findall('^'+hint_string+'$', solutions, re.MULTILINE)
     return solution if solution else None
 
-# --- Spam task ---
-async def spam_task():
-    await client.wait_until_ready()
+@tasks.loop(seconds=random.choice(intervals))
+async def spam():
     channel = client.get_channel(int(spam_id))
-    while not client.is_closed():
-        if channel:
-            await channel.send(''.join(random.sample(['1','2','3','4','5','6','7','8','9','0'],7)*5))
-        await asyncio.sleep(random.choice(intervals))
+    if channel:
+        await channel.send(''.join(random.sample(['1','2','3','4','5','6','7','8','9','0'],7)*5))
+
+@spam.before_loop
+async def before_spam():
+    await client.wait_until_ready()
 
 @client.event
 async def on_ready():
     print(f'Logged into account: {client.user.name}')
-    client.loop.create_task(spam_task())
+    if not spam.is_running():
+        spam.start()
 
 @client.event
 async def on_message(message):
@@ -67,11 +69,9 @@ async def on_message(message):
 
     channel = client.get_channel(message.channel.id)
     guild = message.guild
-
-    # --- Pokétwo handling ---
     if message.author.id == poketwo:
         if channel.category and channel.category.name == 'catch':
-            # Handle embeds
+            # handle embeds
             if message.embeds:
                 embed_title = message.embeds[0].title or ''
                 if 'wild pokémon has appeared!' in embed_title:
@@ -88,14 +88,12 @@ async def on_message(message):
                     if solution:
                         await channel.clone()
                         await move_to_rare(channel, guild, solution[0])
-
-        # Delete channel if Pokétwo says "congratulations" (except catch category)
+        # Handle channel deletion
         if 'congratulations' in message.content.lower():
             if not channel.category or channel.category.name != 'catch':
                 await channel.delete()
-        # Do not delete if message mentions unusual colors
         if 'these colors seem unusual' in message.content.lower():
-            pass
+            pass  # do not delete
 
 async def move_to_stock(channel, guild, pokemon_name):
     for i in range(1, 11):
@@ -115,24 +113,28 @@ async def move_to_rare(channel, guild, pokemon_name):
             await channel.send(f'<@{poketwo}> redirect 1 2 3 4 5')
             break
 
-# --- Commands ---
 @client.command()
 async def report(ctx, *, args):
     await ctx.send(args)
 
 @client.command()
 async def reboot(ctx):
-    client.loop.create_task(spam_task())
+    if not spam.is_running():
+        spam.start()
     await ctx.send("✅ Rebooted tasks.")
 
 @client.command()
 async def pause(ctx):
-    await ctx.send("⏸️ Spam task paused (restart bot to resume).")
+    if spam.is_running():
+        spam.cancel()
+        await ctx.send("⏸️ Spam task paused.")
+    else:
+        await ctx.send("ℹ️ Spam task was not running.")
 
 @client.command()
 @commands.has_permissions(administrator=True)
 async def setup(ctx):
-    """Create all required categories and reorder safely"""
+    """Create and reorder all required categories for the bot (fixed for old forks)."""
     guild = ctx.guild
     category_names = [
         "catch",
@@ -142,27 +144,29 @@ async def setup(ctx):
     ]
 
     created = []
-    for name in category_names:
-        existing = discord.utils.get(guild.categories, name=name)
-        if not existing:
-            await guild.create_category(name)
-            created.append(name)
+    existing_categories = {c.name: c for c in guild.categories}
 
-    # Safe reorder
-    categories = {c.name: c for c in guild.categories}
+    # Create missing categories
+    for name in category_names:
+        if name not in existing_categories:
+            cat = await guild.create_category(name)
+            created.append(name)
+            existing_categories[name] = cat
+
+    # Reorder categories safely
     for index, name in enumerate(category_names):
-        cat = categories.get(name)
+        cat = existing_categories.get(name)
         if cat:
             try:
                 await cat.edit(position=index)
-            except Exception:
-                pass  # ignore errors on old forks
+            except Exception as e:
+                print(f"Could not reorder category {name}: {e}")
 
     if created:
-        await ctx.send(f"✅ Created categories: {', '.join(created)} (reorder attempted)")
+        await ctx.send(f"✅ Created categories: {', '.join(created)} (and reordered all)")
     else:
-        await ctx.send("ℹ️ All categories already exist (reorder attempted)")
+        await ctx.send("ℹ️ All categories already exist, order was fixed.")
 
-# --- Start bot ---
+# --- Start keep-alive and bot ---
 keep_alive()
 client.run(user_token)
