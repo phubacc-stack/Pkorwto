@@ -1,261 +1,250 @@
-import re
-import os
-import asyncio
-import random
-import unicodedata
+import re, os, asyncio, random, string
+from threading import Thread
+from flask import Flask
 from discord.ext import commands, tasks
 import discord
-from flask import Flask
-from threading import Thread
 
-version = 'v3.2'
+version = 'v2.7'
 
 user_token = os.environ['user_token']
 spam_id = os.environ['spam_id']
+report_id = os.environ['report_id']
 
-with open('pokemon', 'r', encoding='utf8') as file:
-    pokemon_list = file.read()
-with open('mythical', 'r', encoding='utf8') as file:
-    mythical_list = file.read()
-
-poketwo = 716390085896962058
-p2assistant = 123456789012345678  # replace with actual p2assistant bot ID
-client = commands.Bot(command_prefix="!")
-
-intervals = [3.6, 2.8, 3.0, 3.2, 3.4]
-
-# --- Flask keep-alive for Render ---
+# --- Keep-alive Flask app (for Render/Replit) ---
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "I'm alive"
+    return "Bot is alive"
 
-def run():
-    app.run(host="0.0.0.0", port=8080)
+def run_web():
+    port = int(os.environ.get('PORT', 8080))
+    # use 0.0.0.0 so external services can ping it
+    app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
-    t = Thread(target=run)
+    t = Thread(target=run_web)
+    t.daemon = True
     t.start()
 
+# --- End keep-alive setup ---
 
-def sanitize_name(name: str) -> str:
-    """Convert Pokémon names into safe Discord channel names."""
-    name = unicodedata.normalize("NFKD", name)
-    name = name.encode("ascii", "ignore").decode("ascii")
-    name = name.lower()
-    name = name.replace("♀", "f").replace("♂", "m")
-    safe = re.sub(r"[^a-z0-9]+", "-", name)
-    return safe.strip("-")
+with open('pokemon','r', encoding='utf8') as file:
+    pokemon_list = file.read()
+with open('mythical','r', encoding='utf8') as file:
+    mythical_list = file.read()
 
+num_pokemon = 0
+shiny = 0
+legendary = 0
+mythical = 0
+
+poketwo = 716390085896962058
+client = commands.Bot(command_prefix='*')  # prefix changed
+intervals = [2.2, 2.4, 2.6, 2.8]
 
 def solve(message, file_name):
-    """Extracts a hint from the message and finds matching solutions in the given file."""
-    hint = [c for c in message[15:-1] if c != '\\']
-    hint_string = ''.join(hint).replace('_', '.')
+    hint = []
+    for i in range(15, len(message) - 1):
+        if message[i] != '\\':
+            hint.append(message[i])
+    hint_string = ''.join(hint)
+    hint_replaced = hint_string.replace('_', '.')
     with open(f"{file_name}", "r") as f:
         solutions = f.read()
-    solution = re.findall(f'^{hint_string}$', solutions, re.MULTILINE)
-    return solution if solution else None
-
+    solution = re.findall('^'+hint_replaced+'$', solutions, re.MULTILINE)
+    if len(solution) == 0:
+        return None
+    return solution
 
 @tasks.loop(seconds=random.choice(intervals))
 async def spam():
-    """Spam loop with rate-limit handling."""
     channel = client.get_channel(int(spam_id))
-    if not channel:
-        print("Channel not found.")
-        return
-    message_content = ''.join(random.sample('1234567890', 7) * 5)
-    try:
-        await channel.send(message_content)
-    except discord.errors.HTTPException as e:
-        if e.status == 429:
-            retry_after = getattr(e, 'retry_after', 5)
-            print(f"Rate limit exceeded. Retrying in {retry_after} seconds...")
-            await asyncio.sleep(retry_after)
-            await spam()
-        else:
-            print(f"HTTP error: {e}. Retrying in 60 seconds...")
-            await asyncio.sleep(60)
-            await spam()
-    except discord.errors.DiscordServerError as e:
-        print(f"Discord server error: {e}. Retrying in 60 seconds...")
-        await asyncio.sleep(60)
-        await spam()
-
+    await channel.send(''.join(random.sample(['1','2','3','4','5','6','7','8','9','0'],7)*5))
 
 @spam.before_loop
 async def before_spam():
     await client.wait_until_ready()
 
+# start the spam task
+spam.start()
 
 @client.event
 async def on_ready():
     print(f'Logged into account: {client.user.name}')
-    spam.start()
-
 
 @client.event
 async def on_message(message):
-    if message.author.id == client.user.id:
+    # ignore messages from ourselves
+    if message.author == client.user:
         return
 
-    if message.author.id == poketwo and message.channel.category:
-        # --- Spawn embed ---
-        if message.embeds:
-            embed_title = message.embeds[0].title
-            if 'wild pokémon has appeared!' in embed_title:
-                print("[poketwo] Wild Pokémon appeared! Waiting for p2assistant…")
+    # safe-guard for DM messages (no guild)
+    if message.guild is None:
+        return
 
-                def check(m):
-                    return m.author.id == p2assistant and m.channel == message.channel
-
-                try:
-                    p2_msg = await client.wait_for('message', timeout=55.0, check=check)
-                    name = p2_msg.content.split(":")[0].strip()
-                    print(f"[p2assistant] Got name '{name}'")
-
-                    solution = None
-                    with open("collection", "r", encoding="utf8") as f:
-                        if re.search(fr'^{name}$', f.read(), re.MULTILINE):
-                            solution = name
-                            cloned_channel = await message.channel.clone(reason="Cloning for backup")
-                            await cloned_channel.send("Pokémon spawn has been backed up here.")
-                            await move_to_category(message.channel, name, "🎉Friends Col", message.guild)
-                            await cloned_channel.send(
-                                "<@716390085896962058> redirect " + " ".join(str(i) for i in range(1, 51))
-                            )
-                    if not solution:
-                        with open("mythical", "r", encoding="utf8") as f:
-                            if re.search(fr'^{name}$', f.read(), re.MULTILINE):
-                                solution = name
-                                cloned_channel = await message.channel.clone(reason="Cloning for backup")
-                                await cloned_channel.send("Pokémon spawn has been backed up here.")
-                                await move_to_category(message.channel, name, "😈Collection", message.guild)
-                                await cloned_channel.send(
-                                    "<@716390085896962058> redirect " + " ".join(str(i) for i in range(1, 51))
-                                )
-
-                except asyncio.TimeoutError:
-                    print("[backup] No p2assistant, sending @Pokétwo h…")
-                    await message.channel.send('<@716390085896962058> h')
-
-        # --- Pokétwo hints ---
-        else:
-            content = message.content
-            if 'The pokémon is ' in content:
-                print("[hint] Processing Pokétwo hint…")
-                solution = solve(content, 'collection')
-                if solution:
-                    print(f"[hint] Solved: {solution[0]} (Collection)")
-                    cloned_channel = await message.channel.clone(reason="Cloning for backup")
-                    await cloned_channel.send("Pokémon spawn has been backed up here.")
-                    await move_to_category(message.channel, solution[0], "🎉Friends Col", message.guild)
-                    await cloned_channel.send(
-                        "<@716390085896962058> redirect " + " ".join(str(i) for i in range(1, 51))
-                    )
-                else:
-                    solution = solve(content, 'mythical')
-                    if solution:
-                        print(f"[hint] Solved: {solution[0]} (Mythical)")
-                        cloned_channel = await message.channel.clone(reason="Cloning for backup")
-                        await cloned_channel.send("Pokémon spawn has been backed up here.")
-                        await move_to_category(message.channel, solution[0], "😈Collection", message.guild)
-                        await cloned_channel.send(
-                            "<@716390085896962058> redirect " + " ".join(str(i) for i in range(1, 51))
-                        )
-
-    # --- Pokétwo congratulations ---
-    if message.author.id == poketwo and message.content.startswith("Congratulations"):
-        if "colors seem unusual...✨" not in message.content:
-            if message.channel.category and message.channel.category.name.startswith("Spawns"):
-                print("[poketwo] Congrats (non-shiny) in spawns → keeping channel")
+    channel = client.get_channel(message.channel.id)
+    guild = message.guild
+    category = channel.category
+    if message.author.id == poketwo:
+        # guard in case channel.category is None
+        if channel.category and channel.category.name == 'catch':
+            if message.embeds:
+                embed_title = message.embeds[0].title or ''
+                if 'wild pokémon has appeared!' in embed_title:
+                    await asyncio.sleep(1)
+                    await channel.send('<@716390085896962058> h')
             else:
-                print("[poketwo] Congrats (non-shiny) → deleting channel in 15s")
-                await asyncio.sleep(15)
-                await message.channel.delete()
-        else:
-            print("[poketwo] Congrats (shiny) → keeping channel")
-
-    await client.process_commands(message)
-
-
-async def move_to_category(channel, solution, base_category_name, guild, max_channels=48, max_categories=5):
-    """Moves the channel to the appropriate category, creating categories if needed."""
-    for i in range(1, max_categories + 1):
-        category_name = f"{base_category_name} {i}" if i > 1 else base_category_name
-        category = discord.utils.get(guild.categories, name=category_name)
-        if category is None:
-            print(f"[move] Creating new category: {category_name}")
-            category = await guild.create_category(category_name)
-        if len(category.channels) < max_channels:
-            print(f"[move] Moving channel to {category_name} as {solution}")
-            await channel.edit(
-                name=sanitize_name(solution),
-                category=category,
-                sync_permissions=True,
-            )
-            return
-    print(f"[move] All {base_category_name} categories are full.")
-
-
-@client.command()
-async def setup(ctx):
-    """Sets up Friends Col 1–5, Collection 1–5, and a single Spawns category with 50 channels."""
-    guild = ctx.guild
-
-    # Create Friends Col 1-5
-    for i in range(1, 6):
-        name = f"🎉Friends Col {i}" if i > 1 else "🎉Friends Col"
-        if not discord.utils.get(guild.categories, name=name):
-            await guild.create_category(name)
-            print(f"[setup] Created category {name}")
-
-    # Create Collection 1-5
-    for i in range(1, 6):
-        name = f"😈Collection {i}" if i > 1 else "😈Collection"
-        if not discord.utils.get(guild.categories, name=name):
-            await guild.create_category(name)
-            print(f"[setup] Created category {name}")
-
-    # Create single Spawns category
-    spawns_category = discord.utils.get(guild.categories, name="Spawns")
-    if spawns_category is None:
-        spawns_category = await guild.create_category("Spawns")
-        print("[setup] Created category Spawns")
-
-    # Create 50 spawn channels inside Spawns
-    for i in range(1, 51):
-        channel_name = f"spawn-{i}"
-        if not discord.utils.get(spawns_category.channels, name=channel_name):
-            await guild.create_text_channel(channel_name, category=spawns_category)
-            print(f"[setup] Created channel {channel_name} in Spawns")
-
-    await ctx.send("✅ Setup complete!")
-
+                content = message.content
+                solution = None
+                if 'The pokémon is ' in content:
+                    solution = solve(content, 'collection')
+                    if solution:
+                        await channel.clone()
+                        category_name = 'Stock 1'
+                        guild = message.guild
+                        # find the target category (assumes it exists)
+                        new_category = [c for c in guild.categories if c.name == category_name][0]
+                        num_channels = len(new_category.channels)
+                        print(f"There are {num_channels} channels in the {category_name} category.")
+                        if len(new_category.channels) <= 48:
+                            await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                        if len(new_category.channels) >= 48:
+                            category_name = 'Stock 2'
+                            new_category = [c for c in guild.categories if c.name == category_name][0]
+                            num_channels = len(new_category.channels)
+                            print(f"There are {num_channels} channels in the {category_name} category.")
+                            if len(new_category.channels) <= 48:
+                                await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                            if len(new_category.channels) >= 48:
+                                category_name = 'Stock 3'
+                                new_category = [c for c in guild.categories if c.name == category_name][0]
+                                num_channels = len(new_category.channels)
+                                print(f"There are {num_channels} channels in the {category_name} category.")
+                                if len(new_category.channels) <= 48:
+                                    await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                                if len(new_category.channels) >= 48:
+                                    category_name = 'Stock 4'
+                                    new_category = [c for c in guild.categories if c.name == category_name][0]
+                                    num_channels = len(new_category.channels)
+                                    print(f"There are {num_channels} channels in the {category_name} category.")
+                                    if len(new_category.channels) <= 48:
+                                        await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                                    if len(new_category.channels) >= 48:
+                                        category_name = 'Stock 5'
+                                        new_category = [c for c in guild.categories if c.name == category_name][0]
+                                        num_channels = len(new_category.channels)
+                                        print(f"There are {num_channels} channels in the {category_name} category.")
+                                        if len(new_category.channels) <= 48:
+                                            await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                                        if len(new_category.channels) >= 48:
+                                            category_name = 'Stock 6'
+                                            new_category = [c for c in guild.categories if c.name == category_name][0]
+                                            num_channels = len(new_category.channels)
+                                            print(f"There are {num_channels} channels in the {category_name} category.")
+                                            if len(new_category.channels) <= 48:
+                                                await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                                            if len(new_category.channels) >= 48:
+                                                category_name = 'Stock 7'
+                                                new_category = [c for c in guild.categories if c.name == category_name][0]
+                                                num_channels = len(new_category.channels)
+                                                print(f"There are {num_channels} channels in the {category_name} category.")
+                                                if len(new_category.channels) <= 48:
+                                                    await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                                                if len(new_category.channels) >= 48:
+                                                    category_name = 'Stock 8'
+                                                    new_category = [c for c in guild.categories if c.name == category_name][0]
+                                                    num_channels = len(new_category.channels)
+                                                    print(f"There are {num_channels} channels in the {category_name} category.")
+                                                    if len(new_category.channels) <= 48:
+                                                        await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                                                    if len(new_category.channels) >= 48:
+                                                        category_name = 'Stock 9'
+                                                        new_category = [c for c in guild.categories if c.name == category_name][0]
+                                                        num_channels = len(new_category.channels)
+                                                        print(f"There are {num_channels} channels in the {category_name} category.")
+                                                        if len(new_category.channels) <= 48:
+                                                            await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                                                        if len(new_category.channels) >= 48:
+                                                            category_name = 'Stock 10'
+                                                            new_category = [c for c in guild.categories if c.name == category_name][0]
+                                                            num_channels = len(new_category.channels)
+                                                            print(f"There are {num_channels} channels in the {category_name} category.")
+                                                            if len(new_category.channels) <= 48:
+                                                                await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                        await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 7 ')
+                    if not solution:
+                        solution = solve(content, 'mythical')
+                        if solution:
+                            await channel.clone()
+                            category_name = 'Rare 1'
+                            guild = message.guild
+                            new_category = [c for c in guild.categories if c.name == category_name][0]
+                            num_channels = len(new_category.channels)
+                            print(f"There are {num_channels} channels in the {category_name} category.")
+                            if len(new_category.channels) <= 48:
+                                await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                            if len(new_category.channels) >= 48:
+                                category_name = 'Rare 2'
+                                new_category = [c for c in guild.categories if c.name == category_name][0]
+                                num_channels = len(new_category.channels)
+                                print(f"There are {num_channels} channels in the {category_name} category.")
+                                if len(new_category.channels) <= 48:
+                                    await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
 
 @client.command()
 async def report(ctx, *, args):
     await ctx.send(args)
 
-
 @client.command()
 async def reboot(ctx):
-    if spam.is_running():
-        spam.cancel()
-        await ctx.send("Spam loop has been stopped.")
-    spam.start()
-    await ctx.send("Spam loop has been restarted.")
-
+    # restart spam task if it's not running
+    if not spam.is_running():
+        spam.start()
+    await ctx.send("✅ Rebooted tasks.")
 
 @client.command()
 async def pause(ctx):
-    spam.cancel()
-    await ctx.send("Spam loop paused.")
+    if spam.is_running():
+        spam.cancel()
+        await ctx.send("⏸️ Spam task paused.")
+    else:
+        await ctx.send("ℹ️ Spam task was not running.")
 
+# NEW: setup command with reordering
+@client.command()
+@commands.has_permissions(administrator=True)
+async def setup(ctx):
+    """Create and reorder all required categories for the bot."""
+    guild = ctx.guild
+    category_names = [
+        "catch",
+        "Stock 1", "Stock 2", "Stock 3", "Stock 4", "Stock 5",
+        "Stock 6", "Stock 7", "Stock 8", "Stock 9", "Stock 10",
+        "Rare 1", "Rare 2"
+    ]
 
-# --- Start keep-alive + bot ---
+    created = []
+    for name in category_names:
+        existing = discord.utils.get(guild.categories, name=name)
+        if not existing:
+            await guild.create_category(name)
+            created.append(name)
+
+    # reorder categories in desired order
+    categories = {c.name: c for c in guild.categories}
+    for index, name in enumerate(category_names):
+        cat = categories.get(name)
+        if cat:
+            # move category to desired position
+            await cat.edit(position=index)
+
+    if created:
+        await ctx.send(f"✅ Created categories: {', '.join(created)} (and reordered all)")
+    else:
+        await ctx.send("ℹ️ All categories already exist, order was fixed.")
+
+# start the keep-alive webserver, then run the bot
 keep_alive()
-client.run(user_token)
-                    
+client.run(f"{user_token}")
+            
