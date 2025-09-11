@@ -38,15 +38,17 @@ poketwo = 716390085896962058
 client = commands.Bot(command_prefix='*')
 intervals = [2.2, 2.4, 2.6, 2.8]
 
+# --- FIXED solve function ---
 def solve(message, file_name):
     hint = [c for c in message[15:-1] if c != '\\']
-    hint_string = ''.join(hint).replace('_', '.')
-    with open(file_name, 'r') as f:
+    hint_string = ''.join(hint)
+    # Escape regex special chars, keep underscore as wildcard
+    hint_string = re.escape(hint_string).replace('_', '.')
+    with open(file_name, 'r', encoding='utf8') as f:
         solutions = f.read()
     solution = re.findall('^'+hint_string+'$', solutions, re.MULTILINE)
     return solution if solution else None
 
-# --- Spam task ---
 @tasks.loop(seconds=random.choice(intervals))
 async def spam():
     channel = client.get_channel(int(spam_id))
@@ -89,15 +91,12 @@ async def on_message(message):
                     if solution:
                         await channel.clone()
                         await move_to_rare(channel, guild, solution[0])
-        # Handle channel deletion on certain Pokétwo messages
+        # Handle channel deletion
         if 'congratulations' in message.content.lower():
             if not channel.category or channel.category.name != 'catch':
                 await channel.delete()
         if 'these colors seem unusual' in message.content.lower():
-            pass  # do not delete, just ignore
-
-    # ⚠️ Allow commands to work
-    await client.process_commands(message)
+            pass  # do not delete
 
 async def move_to_stock(channel, guild, pokemon_name):
     for i in range(1, 11):
@@ -105,7 +104,6 @@ async def move_to_stock(channel, guild, pokemon_name):
         cat = discord.utils.get(guild.categories, name=category_name)
         if cat and len(cat.channels) < 48:
             await channel.edit(name=pokemon_name.lower().replace(' ', '-'), category=cat, sync_permissions=True)
-            # Ping Pokétwo after moving
             await channel.send(f'<@{poketwo}> redirect 1 2 3 4 5')
             break
 
@@ -115,7 +113,6 @@ async def move_to_rare(channel, guild, pokemon_name):
         cat = discord.utils.get(guild.categories, name=category_name)
         if cat and len(cat.channels) < 48:
             await channel.edit(name=pokemon_name.lower().replace(' ', '-'), category=cat, sync_permissions=True)
-            # Ping Pokétwo after moving
             await channel.send(f'<@{poketwo}> redirect 1 2 3 4 5')
             break
 
