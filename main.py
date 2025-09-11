@@ -56,11 +56,11 @@ async def spam():
 async def before_spam():
     await client.wait_until_ready()
 
-spam.start()
-
 @client.event
 async def on_ready():
     print(f'Logged into account: {client.user.name}')
+    if not spam.is_running():
+        spam.start()
 
 @client.event
 async def on_message(message):
@@ -89,16 +89,13 @@ async def on_message(message):
                         await channel.clone()
                         await move_to_rare(channel, guild, solution[0])
 
-    # --- Allow commands to work ---
-    await client.process_commands(message)
-
 async def move_to_stock(channel, guild, pokemon_name):
     for i in range(1, 11):
         category_name = f'Stock {i}'
         cat = discord.utils.get(guild.categories, name=category_name)
         if cat and len(cat.channels) < 48:
             await channel.edit(name=pokemon_name.lower().replace(' ', '-'), category=cat, sync_permissions=True)
-            # Send Pokétwo redirect after move
+            # Ping Pokétwo after moving
             await channel.send(f'<@{poketwo}> 1 2 3 4 5')
             break
 
@@ -108,7 +105,7 @@ async def move_to_rare(channel, guild, pokemon_name):
         cat = discord.utils.get(guild.categories, name=category_name)
         if cat and len(cat.channels) < 48:
             await channel.edit(name=pokemon_name.lower().replace(' ', '-'), category=cat, sync_permissions=True)
-            # Send Pokétwo redirect after move
+            # Ping Pokétwo after moving
             await channel.send(f'<@{poketwo}> 1 2 3 4 5')
             break
 
