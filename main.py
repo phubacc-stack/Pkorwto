@@ -10,7 +10,7 @@ user_token = os.environ['user_token']
 spam_id = os.environ['spam_id']
 report_id = os.environ['report_id']
 
-# --- Keep-alive Flask app (for Render/Replit) ---
+# --- Keep-alive Flask app ---
 app = Flask('')
 
 @app.route('/')
@@ -46,7 +46,7 @@ def solve(message, file_name):
     solution = re.findall('^'+hint_string+'$', solutions, re.MULTILINE)
     return solution if solution else None
 
-# --- Spam task compatible with old Discord fork ---
+# --- Spam task ---
 async def spam_task():
     await client.wait_until_ready()
     channel = client.get_channel(int(spam_id))
@@ -67,9 +67,11 @@ async def on_message(message):
 
     channel = client.get_channel(message.channel.id)
     guild = message.guild
+
+    # --- Pokétwo handling ---
     if message.author.id == poketwo:
-        # Handle channel in catch category
         if channel.category and channel.category.name == 'catch':
+            # Handle embeds
             if message.embeds:
                 embed_title = message.embeds[0].title or ''
                 if 'wild pokémon has appeared!' in embed_title:
@@ -86,13 +88,14 @@ async def on_message(message):
                     if solution:
                         await channel.clone()
                         await move_to_rare(channel, guild, solution[0])
-        # Handle channel deletion
-        msg_lower = message.content.lower()
-        if 'congratulations' in msg_lower:
+
+        # Delete channel if Pokétwo says "congratulations" (except catch category)
+        if 'congratulations' in message.content.lower():
             if not channel.category or channel.category.name != 'catch':
                 await channel.delete()
-        elif 'these colors seem unusual' in msg_lower:
-            pass  # Do not delete
+        # Do not delete if message mentions unusual colors
+        if 'these colors seem unusual' in message.content.lower():
+            pass
 
 async def move_to_stock(channel, guild, pokemon_name):
     for i in range(1, 11):
@@ -112,6 +115,7 @@ async def move_to_rare(channel, guild, pokemon_name):
             await channel.send(f'<@{poketwo}> redirect 1 2 3 4 5')
             break
 
+# --- Commands ---
 @client.command()
 async def report(ctx, *, args):
     await ctx.send(args)
@@ -128,7 +132,7 @@ async def pause(ctx):
 @client.command()
 @commands.has_permissions(administrator=True)
 async def setup(ctx):
-    """Create all required categories (old fork safe)"""
+    """Create all required categories and reorder safely"""
     guild = ctx.guild
     category_names = [
         "catch",
@@ -144,21 +148,21 @@ async def setup(ctx):
             await guild.create_category(name)
             created.append(name)
 
-    # Attempt reorder safely
-    try:
-        categories = {c.name: c for c in guild.categories}
-        for index, name in enumerate(category_names):
-            cat = categories.get(name)
-            if cat:
+    # Safe reorder
+    categories = {c.name: c for c in guild.categories}
+    for index, name in enumerate(category_names):
+        cat = categories.get(name)
+        if cat:
+            try:
                 await cat.edit(position=index)
-    except Exception:
-        pass  # ignore reorder errors on old forks
+            except Exception:
+                pass  # ignore errors on old forks
 
     if created:
         await ctx.send(f"✅ Created categories: {', '.join(created)} (reorder attempted)")
     else:
         await ctx.send("ℹ️ All categories already exist (reorder attempted)")
 
-# --- Start keep-alive ---
+# --- Start bot ---
 keep_alive()
 client.run(user_token)
