@@ -46,6 +46,7 @@ def solve(message, file_name):
     solution = re.findall('^'+hint_string+'$', solutions, re.MULTILINE)
     return solution if solution else None
 
+# --- Spam task ---
 @tasks.loop(seconds=random.choice(intervals))
 async def spam():
     channel = client.get_channel(int(spam_id))
@@ -88,12 +89,15 @@ async def on_message(message):
                     if solution:
                         await channel.clone()
                         await move_to_rare(channel, guild, solution[0])
-        # Handle channel deletion
+        # Handle channel deletion on certain Pokétwo messages
         if 'congratulations' in message.content.lower():
             if not channel.category or channel.category.name != 'catch':
                 await channel.delete()
         if 'these colors seem unusual' in message.content.lower():
-            pass  # do not delete
+            pass  # do not delete, just ignore
+
+    # ⚠️ Allow commands to work
+    await client.process_commands(message)
 
 async def move_to_stock(channel, guild, pokemon_name):
     for i in range(1, 11):
@@ -101,6 +105,7 @@ async def move_to_stock(channel, guild, pokemon_name):
         cat = discord.utils.get(guild.categories, name=category_name)
         if cat and len(cat.channels) < 48:
             await channel.edit(name=pokemon_name.lower().replace(' ', '-'), category=cat, sync_permissions=True)
+            # Ping Pokétwo after moving
             await channel.send(f'<@{poketwo}> redirect 1 2 3 4 5')
             break
 
@@ -110,6 +115,7 @@ async def move_to_rare(channel, guild, pokemon_name):
         cat = discord.utils.get(guild.categories, name=category_name)
         if cat and len(cat.channels) < 48:
             await channel.edit(name=pokemon_name.lower().replace(' ', '-'), category=cat, sync_permissions=True)
+            # Ping Pokétwo after moving
             await channel.send(f'<@{poketwo}> redirect 1 2 3 4 5')
             break
 
@@ -134,7 +140,7 @@ async def pause(ctx):
 @client.command()
 @commands.has_permissions(administrator=True)
 async def setup(ctx):
-    """Create and reorder all required categories for the bot (fixed for old forks)."""
+    """Create and reorder all required categories for the bot."""
     guild = ctx.guild
     category_names = [
         "catch",
@@ -144,23 +150,18 @@ async def setup(ctx):
     ]
 
     created = []
-    existing_categories = {c.name: c for c in guild.categories}
-
-    # Create missing categories
     for name in category_names:
-        if name not in existing_categories:
-            cat = await guild.create_category(name)
+        existing = discord.utils.get(guild.categories, name=name)
+        if not existing:
+            await guild.create_category(name)
             created.append(name)
-            existing_categories[name] = cat
 
-    # Reorder categories safely
+    # reorder categories
+    categories = {c.name: c for c in guild.categories}
     for index, name in enumerate(category_names):
-        cat = existing_categories.get(name)
+        cat = categories.get(name)
         if cat:
-            try:
-                await cat.edit(position=index)
-            except Exception as e:
-                print(f"Could not reorder category {name}: {e}")
+            await cat.edit(position=index)
 
     if created:
         await ctx.send(f"✅ Created categories: {', '.join(created)} (and reordered all)")
@@ -170,3 +171,4 @@ async def setup(ctx):
 # --- Start keep-alive and bot ---
 keep_alive()
 client.run(user_token)
+    
