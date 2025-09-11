@@ -56,11 +56,11 @@ async def spam():
 async def before_spam():
     await client.wait_until_ready()
 
+spam.start()
+
 @client.event
 async def on_ready():
     print(f'Logged into account: {client.user.name}')
-    if not spam.is_running():
-        spam.start()
 
 @client.event
 async def on_message(message):
@@ -126,7 +126,7 @@ async def pause(ctx):
 @client.command()
 @commands.has_permissions(administrator=True)
 async def setup(ctx):
-    """Create and reorder all required categories for the bot."""
+    """Create and reorder all required categories for the bot with logging."""
     guild = ctx.guild
     category_names = [
         "catch",
@@ -139,15 +139,23 @@ async def setup(ctx):
     for name in category_names:
         existing = discord.utils.get(guild.categories, name=name)
         if not existing:
-            await guild.create_category(name)
-            created.append(name)
+            try:
+                await guild.create_category(name)
+                created.append(name)
+                print(f"[SETUP] Created category: {name}")
+            except Exception as e:
+                print(f"[SETUP] Failed to create {name}: {e}")
 
-    # reorder categories
+    # Reorder categories
     categories = {c.name: c for c in guild.categories}
     for index, name in enumerate(category_names):
         cat = categories.get(name)
         if cat:
-            await cat.edit(position=index)
+            try:
+                await cat.edit(position=index)
+                print(f"[SETUP] Set position for {name} to {index}")
+            except Exception as e:
+                print(f"[SETUP] Failed to set position for {name}: {e}")
 
     if created:
         await ctx.send(f"✅ Created categories: {', '.join(created)} (and reordered all)")
@@ -157,4 +165,4 @@ async def setup(ctx):
 # --- Start keep-alive and bot ---
 keep_alive()
 client.run(user_token)
-    
+            
