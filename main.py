@@ -59,7 +59,6 @@ async def before_spam():
 @client.event
 async def on_ready():
     print(f'Logged into account: {client.user.name}')
-    # Start the spam task safely
     if not spam.is_running():
         spam.start()
 
@@ -89,6 +88,9 @@ async def on_message(message):
                     if solution:
                         await channel.clone()
                         await move_to_rare(channel, guild, solution[0])
+
+    # Important: process commands after handling messages
+    await client.process_commands(message)
 
 async def move_to_stock(channel, guild, pokemon_name):
     for i in range(1, 11):
@@ -127,7 +129,7 @@ async def pause(ctx):
 @client.command()
 @commands.has_permissions(administrator=True)
 async def setup(ctx):
-    """Create and reorder all required categories for the bot, with logging."""
+    """Create and reorder all required categories for the bot."""
     guild = ctx.guild
     category_names = [
         "catch",
@@ -140,23 +142,15 @@ async def setup(ctx):
     for name in category_names:
         existing = discord.utils.get(guild.categories, name=name)
         if not existing:
-            try:
-                await guild.create_category(name)
-                created.append(name)
-                print(f"[Setup] Created category: {name}")
-            except Exception as e:
-                print(f"[Setup] Failed to create {name}: {e}")
+            await guild.create_category(name)
+            created.append(name)
 
     # reorder categories
     categories = {c.name: c for c in guild.categories}
     for index, name in enumerate(category_names):
         cat = categories.get(name)
         if cat:
-            try:
-                await cat.edit(position=index)
-                print(f"[Setup] Set position for {name} -> {index}")
-            except Exception as e:
-                print(f"[Setup] Failed to reorder {name}: {e}")
+            await cat.edit(position=index)
 
     if created:
         await ctx.send(f"✅ Created categories: {', '.join(created)} (and reordered all)")
@@ -166,4 +160,3 @@ async def setup(ctx):
 # --- Start keep-alive and bot ---
 keep_alive()
 client.run(user_token)
-        
