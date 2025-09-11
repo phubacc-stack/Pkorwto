@@ -56,11 +56,11 @@ async def spam():
 async def before_spam():
     await client.wait_until_ready()
 
-spam.start()
-
 @client.event
 async def on_ready():
     print(f'Logged into account: {client.user.name}')
+    if not spam.is_running():
+        spam.start()
 
 @client.event
 async def on_message(message):
@@ -157,4 +157,4 @@ async def setup(ctx):
 # --- Start keep-alive and bot ---
 keep_alive()
 client.run(user_token)
-                
+    
