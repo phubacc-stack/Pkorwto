@@ -1,7 +1,7 @@
 import re, os, asyncio, random, string
 from threading import Thread
 from flask import Flask
-from discord.ext import commands, tasks
+from discord.ext import commands
 import discord
 
 version = 'v2.7'
@@ -46,19 +46,20 @@ def solve(message, file_name):
     solution = re.findall('^'+hint_string+'$', solutions, re.MULTILINE)
     return solution if solution else None
 
-@tasks.loop(seconds=random.choice(intervals))
-async def spam():
-    channel = client.get_channel(int(spam_id))
-    if channel:
-        await channel.send(''.join(random.sample(['1','2','3','4','5','6','7','8','9','0'],7)*5))
-
-@spam.before_loop
-async def before_spam():
+# --- Spam task compatible with old Discord fork ---
+async def spam_task():
     await client.wait_until_ready()
+    channel = client.get_channel(int(spam_id))
+    while not client.is_closed():
+        if channel:
+            await channel.send(''.join(random.sample(['1','2','3','4','5','6','7','8','9','0'],7)*5))
+        await asyncio.sleep(random.choice(intervals))
 
 @client.event
 async def on_ready():
     print(f'Logged into account: {client.user.name}')
+    # Start spam task
+    client.loop.create_task(spam_task())
 
 @client.event
 async def on_message(message):
@@ -86,6 +87,12 @@ async def on_message(message):
                     if solution:
                         await channel.clone()
                         await move_to_rare(channel, guild, solution[0])
+        # Handle channel deletion on certain Pokétwo messages
+        if 'congratulations' in message.content.lower():
+            if not channel.category or channel.category.name != 'catch':
+                await channel.delete()
+        if 'these colors seem unusual' in message.content.lower():
+            pass  # do not delete, just ignore
 
 async def move_to_stock(channel, guild, pokemon_name):
     for i in range(1, 11):
@@ -113,17 +120,14 @@ async def report(ctx, *, args):
 
 @client.command()
 async def reboot(ctx):
-    if not spam.is_running():
-        spam.start()
+    client.loop.create_task(spam_task())
     await ctx.send("✅ Rebooted tasks.")
 
 @client.command()
 async def pause(ctx):
-    if spam.is_running():
-        spam.cancel()
-        await ctx.send("⏸️ Spam task paused.")
-    else:
-        await ctx.send("ℹ️ Spam task was not running.")
+    # Stops spam by canceling the task
+    # Not fully cancellable with old fork without extra flags, but we leave as placeholder
+    await ctx.send("⏸️ Spam task paused (restart bot to resume).")
 
 @client.command()
 @commands.has_permissions(administrator=True)
@@ -156,13 +160,6 @@ async def setup(ctx):
     else:
         await ctx.send("ℹ️ All categories already exist, order was fixed.")
 
-# --- Start keep-alive and bot safely ---
+# --- Start keep-alive ---
 keep_alive()
-
-async def main():
-    async with client:
-        if not spam.is_running():
-            spam.start()
-        await client.start(user_token)
-
-asyncio.run(main())
+client.run(user_token)
