@@ -59,8 +59,6 @@ async def before_spam():
 @client.event
 async def on_ready():
     print(f'Logged into account: {client.user.name}')
-    if not spam.is_running():
-        spam.start()
 
 @client.event
 async def on_message(message):
@@ -96,7 +94,7 @@ async def move_to_stock(channel, guild, pokemon_name):
         if cat and len(cat.channels) < 48:
             await channel.edit(name=pokemon_name.lower().replace(' ', '-'), category=cat, sync_permissions=True)
             # Ping Pokétwo after moving
-            await channel.send(f'<@{poketwo}> 1 2 3 4 5')
+            await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5')
             break
 
 async def move_to_rare(channel, guild, pokemon_name):
@@ -106,7 +104,7 @@ async def move_to_rare(channel, guild, pokemon_name):
         if cat and len(cat.channels) < 48:
             await channel.edit(name=pokemon_name.lower().replace(' ', '-'), category=cat, sync_permissions=True)
             # Ping Pokétwo after moving
-            await channel.send(f'<@{poketwo}> 1 2 3 4 5')
+            await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5')
             break
 
 @client.command()
@@ -158,6 +156,13 @@ async def setup(ctx):
     else:
         await ctx.send("ℹ️ All categories already exist, order was fixed.")
 
-# --- Start keep-alive and bot ---
+# --- Start keep-alive and bot safely ---
 keep_alive()
-client.run(user_token)
+
+async def main():
+    async with client:
+        if not spam.is_running():
+            spam.start()
+        await client.start(user_token)
+
+asyncio.run(main())
