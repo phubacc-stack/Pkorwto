@@ -38,15 +38,15 @@ poketwo = 716390085896962058
 client = commands.Bot(command_prefix='*')
 intervals = [2.2, 2.4, 2.6, 2.8]
 
-# --- FIXED solve function ---
 def solve(message, file_name):
     hint = [c for c in message[15:-1] if c != '\\']
-    hint_string = ''.join(hint)
-    # Escape regex special chars, keep underscore as wildcard
-    hint_string = re.escape(hint_string).replace('_', '.')
-    with open(file_name, 'r', encoding='utf8') as f:
+    hint_string = ''.join(hint).replace('_', '.')
+    with open(file_name, 'r') as f:
         solutions = f.read()
-    solution = re.findall('^'+hint_string+'$', solutions, re.MULTILINE)
+    try:
+        solution = re.findall('^'+hint_string+'$', solutions, re.MULTILINE)
+    except re.error:
+        return None
     return solution if solution else None
 
 @tasks.loop(seconds=random.choice(intervals))
@@ -72,6 +72,7 @@ async def on_message(message):
 
     channel = client.get_channel(message.channel.id)
     guild = message.guild
+
     if message.author.id == poketwo:
         if channel.category and channel.category.name == 'catch':
             # handle embeds
@@ -79,7 +80,7 @@ async def on_message(message):
                 embed_title = message.embeds[0].title or ''
                 if 'wild pokémon has appeared!' in embed_title:
                     await asyncio.sleep(1)
-                    await channel.send('<@716390085896962058> h')
+                    await channel.send(f'<@{poketwo}> h')
             else:
                 content = message.content
                 solution = solve(content, 'collection')
@@ -91,12 +92,16 @@ async def on_message(message):
                     if solution:
                         await channel.clone()
                         await move_to_rare(channel, guild, solution[0])
-        # Handle channel deletion
+
+        # Handle channel deletion on certain Pokétwo messages
         if 'congratulations' in message.content.lower():
             if not channel.category or channel.category.name != 'catch':
                 await channel.delete()
         if 'these colors seem unusual' in message.content.lower():
-            pass  # do not delete
+            pass  # do not delete, just ignore
+
+    # ✅ process commands so *setup etc. work
+    await client.process_commands(message)
 
 async def move_to_stock(channel, guild, pokemon_name):
     for i in range(1, 11):
@@ -168,4 +173,3 @@ async def setup(ctx):
 # --- Start keep-alive and bot ---
 keep_alive()
 client.run(user_token)
-    
