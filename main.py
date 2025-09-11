@@ -1,7 +1,7 @@
 import re, os, asyncio, random, string
 from threading import Thread
 from flask import Flask
-from discord.ext import commands
+from discord.ext import commands, tasks
 import discord
 
 version = 'v2.7'
@@ -58,7 +58,6 @@ async def spam_task():
 @client.event
 async def on_ready():
     print(f'Logged into account: {client.user.name}')
-    # Start spam task
     client.loop.create_task(spam_task())
 
 @client.event
@@ -69,8 +68,8 @@ async def on_message(message):
     channel = client.get_channel(message.channel.id)
     guild = message.guild
     if message.author.id == poketwo:
+        # Handle channel in catch category
         if channel.category and channel.category.name == 'catch':
-            # handle embeds
             if message.embeds:
                 embed_title = message.embeds[0].title or ''
                 if 'wild pokémon has appeared!' in embed_title:
@@ -87,12 +86,13 @@ async def on_message(message):
                     if solution:
                         await channel.clone()
                         await move_to_rare(channel, guild, solution[0])
-        # Handle channel deletion on certain Pokétwo messages
-        if 'congratulations' in message.content.lower():
+        # Handle channel deletion
+        msg_lower = message.content.lower()
+        if 'congratulations' in msg_lower:
             if not channel.category or channel.category.name != 'catch':
                 await channel.delete()
-        if 'these colors seem unusual' in message.content.lower():
-            pass  # do not delete, just ignore
+        elif 'these colors seem unusual' in msg_lower:
+            pass  # Do not delete
 
 async def move_to_stock(channel, guild, pokemon_name):
     for i in range(1, 11):
@@ -100,8 +100,7 @@ async def move_to_stock(channel, guild, pokemon_name):
         cat = discord.utils.get(guild.categories, name=category_name)
         if cat and len(cat.channels) < 48:
             await channel.edit(name=pokemon_name.lower().replace(' ', '-'), category=cat, sync_permissions=True)
-            # Ping Pokétwo after moving
-            await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5')
+            await channel.send(f'<@{poketwo}> redirect 1 2 3 4 5')
             break
 
 async def move_to_rare(channel, guild, pokemon_name):
@@ -110,8 +109,7 @@ async def move_to_rare(channel, guild, pokemon_name):
         cat = discord.utils.get(guild.categories, name=category_name)
         if cat and len(cat.channels) < 48:
             await channel.edit(name=pokemon_name.lower().replace(' ', '-'), category=cat, sync_permissions=True)
-            # Ping Pokétwo after moving
-            await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5')
+            await channel.send(f'<@{poketwo}> redirect 1 2 3 4 5')
             break
 
 @client.command()
@@ -125,14 +123,12 @@ async def reboot(ctx):
 
 @client.command()
 async def pause(ctx):
-    # Stops spam by canceling the task
-    # Not fully cancellable with old fork without extra flags, but we leave as placeholder
     await ctx.send("⏸️ Spam task paused (restart bot to resume).")
 
 @client.command()
 @commands.has_permissions(administrator=True)
 async def setup(ctx):
-    """Create and reorder all required categories for the bot."""
+    """Create all required categories (old fork safe)"""
     guild = ctx.guild
     category_names = [
         "catch",
@@ -148,19 +144,20 @@ async def setup(ctx):
             await guild.create_category(name)
             created.append(name)
 
-    # 🔹 refresh categories after creating so reorder works
-    await asyncio.sleep(1)
-    categories = {c.name: c for c in guild.categories}
-
-    for index, name in enumerate(category_names):
-        cat = categories.get(name)
-        if cat:
-            await cat.edit(position=index)
+    # Attempt reorder safely
+    try:
+        categories = {c.name: c for c in guild.categories}
+        for index, name in enumerate(category_names):
+            cat = categories.get(name)
+            if cat:
+                await cat.edit(position=index)
+    except Exception:
+        pass  # ignore reorder errors on old forks
 
     if created:
-        await ctx.send(f"✅ Created categories: {', '.join(created)} (and reordered all)")
+        await ctx.send(f"✅ Created categories: {', '.join(created)} (reorder attempted)")
     else:
-        await ctx.send("ℹ️ All categories already exist, order was fixed.")
+        await ctx.send("ℹ️ All categories already exist (reorder attempted)")
 
 # --- Start keep-alive ---
 keep_alive()
