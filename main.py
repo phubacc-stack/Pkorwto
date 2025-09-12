@@ -74,6 +74,12 @@ async def on_message(message):
     guild = message.guild
 
     if message.author.id == poketwo:
+        # 🚨 Stop spam & ping user on CAPTCHA
+        if "Whoa there. Please tell us you're human!" in message.content:
+            if spam.is_running():
+                spam.cancel()
+            await channel.send("<@gottacatchemall0949> Pokétwo triggered a CAPTCHA!")
+
         if channel.category and channel.category.name == 'catch':
             # handle embeds
             if message.embeds:
